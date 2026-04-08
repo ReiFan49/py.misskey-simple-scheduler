@@ -18,7 +18,7 @@ def main():
   while True:
     ctime = time.time()
     rest_posts = [p for p in posts if ctime <= p['time']]
-    post_times = list(set(p['time'] for p in posts))
+    post_times = list(set(p['time'] for p in rest_posts))
     if not post_times:
       break
     ntime = post_times[0]
