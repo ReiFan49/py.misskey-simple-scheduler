@@ -10,7 +10,17 @@ posts = []
 
 def load_config():
   global users, posts
-  data = yaml.load(open('config.yaml').read(), Loader=yaml.Loader)
+  data = None
+  for config_file in ('config.yaml', 'config.yml'):
+    path = pathlib.Path.cwd() / config_file
+    if not path.exists():
+      continue
+    data = yaml.load(path.read_text(), Loader=yaml.Loader)
+    break
+
+  if not data:
+    raise RuntimeError('config files not found. cannot start program')
+
   users = data['users']
   posts = data['posts']
 
