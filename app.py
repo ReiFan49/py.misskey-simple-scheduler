@@ -25,37 +25,68 @@ def load_config():
   users = data['users']
   posts = data['posts']
 
+class WorkingPost:
+  def __init__(self, post):
+    self.user    = users.get(post['user'])
+    self.post    = post
+    self.session = requests.Session()
+
+    self.files = []
+
+  def fetch_files(self):
+    if self.post.get('files'):
+      self.files.extend(self.post['files'])
+    if self.post.get('folders'):
+      for folder_id in self.post['folders']:
+        folder_files = self.session.post('{}/api/drive/files'.format(self.user['host']), json={
+          'i': self.user['token'],
+          'folderId': folder_id,
+          'limit': 16,
+          'sinceId': '0',
+          'sort': None,
+        }).json()
+        folder_files.sort(key=lambda f: datetime.strptime(
+          f['createdAt'],
+          r'%Y-%m-%dT%H:%M:%S.%f%z',
+        ).timestamp())
+        self.files.extend(f['id'] for f in folder_files)
+
+  def post(self):
+    if len(proc.files) > 16:
+      print('There are {} files found, exceeds software limit (16). Truncating the rest.'.format(len(proc.files)))
+
+    # NOTE: /i/registry doesn't work properly with API Token
+    #       because misskey source code states that every provided API token
+    #       (non-global/internal one) are forced to access their own
+    #       scope part of the registry.
+    #       One of the reason that "reactionAcceptance" is not synced
+    #       through Misskey clients.
+    self.session.post('{}/api/notes/create'.format(self.user['host']), json={
+      'i': self.user['token'],
+      'text': self.post['content'],
+      'fileIds': self.files[:16],
+    })
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, *exc):
+    return False
+
 def process_post(post):
-  user = users.get(post['user'])
-  session = requests.Session()
-  if not user:
+  if post['user'] not in users:
     return
-  files = []
-  if post.get('files'):
-    files.extend(post['files'])
-  if post.get('folders'):
-    for folder_id in post['folders']:
-      folder_files = session.post('{}/api/drive/files'.format(user['host']), json={
-        'i': user['token'],
-        'folderId': folder_id,
-        'limit': 16,
-        'sinceId': '0',
-        'sort': None,
-      }).json()
-      folder_files.sort(key=lambda f: datetime.strptime(
-        f['createdAt'],
-        r'%Y-%m-%dT%H:%M:%S.%f%z',
-      ).timestamp())
-      files.extend(f['id'] for f in folder_files)
 
-  if len(files) > 16:
-    print('There are {} files found, exceeds software limit (16). Truncating the rest.'.format(len(files)))
+  with WorkingPost(post) as wp:
+    wp.fetch_files()
+    wp.post()
 
-  session.post('{}/api/notes/create'.format(user['host']), json={
-    'i': user['token'],
-    'text': post['content'],
-    'fileIds': files[:16],
-  })
+def process_fetch_only(post):
+  if post['user'] not in users:
+    return
+
+  with WorkingPost(post) as wp:
+    wp.fetch_files()
 
 def main():
   while True:
