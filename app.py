@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-import json
 import time
 import yaml
 import pathlib
 from datetime import datetime
 import requests
 
-users = {}
-posts = []
+from typing import List, Dict, Any
+
+users : Dict[str, Dict[str, Any]] = {}
+posts : List[Dict[str, Any]] = []
 
 def load_config():
   global users, posts
@@ -27,7 +28,7 @@ def load_config():
 
 class WorkingPost:
   def __init__(self, post):
-    self.user    = users.get(post['user'])
+    self.user    = users[post['user']]
     self.post    = post
     self.session = requests.Session()
 
@@ -51,9 +52,9 @@ class WorkingPost:
         ).timestamp())
         self.files.extend(f['id'] for f in folder_files)
 
-  def post(self):
-    if len(proc.files) > 16:
-      print('There are {} files found, exceeds software limit (16). Truncating the rest.'.format(len(proc.files)))
+  def post_note(self):
+    if len(self.files) > 16:
+      print('There are {} files found, exceeds software limit (16). Truncating the rest.'.format(len(self.files)))
 
     # NOTE: /i/registry doesn't work properly with API Token
     #       because misskey source code states that every provided API token
@@ -79,7 +80,7 @@ def process_post(post):
 
   with WorkingPost(post) as wp:
     wp.fetch_files()
-    wp.post()
+    wp.post_note()
 
 def process_fetch_only(post):
   if post['user'] not in users:
