@@ -7,10 +7,12 @@ import requests
 
 from typing import List, Dict, Any
 
-users : Dict[str, Dict[str, Any]] = {}
-posts : List[Dict[str, Any]] = []
+GenericDict = Dict[str, Any]
 
-def load_config():
+users : Dict[str, GenericDict] = {}
+posts : List[GenericDict] = []
+
+def load_config() -> None:
   global users, posts
   data = None
   for config_file in ('config.yaml', 'config.yml'):
@@ -27,14 +29,14 @@ def load_config():
   posts = data['posts']
 
 class WorkingPost:
-  def __init__(self, post):
-    self.user    = users[post['user']]
-    self.post    = post
+  def __init__(self, post: GenericDict):
+    self.user    : GenericDict = users[post['user']]
+    self.post    : GenericDict = post
     self.session = requests.Session()
 
-    self.files = []
+    self.files   : List[str] = []
 
-  def fetch_files(self):
+  def fetch_files(self) -> None:
     if self.post.get('files'):
       self.files.extend(self.post['files'])
     if self.post.get('folders'):
@@ -52,7 +54,7 @@ class WorkingPost:
         ).timestamp())
         self.files.extend(f['id'] for f in folder_files)
 
-  def post_note(self):
+  def post_note(self) -> None:
     if len(self.files) > 16:
       print('There are {} files found, exceeds software limit (16). Truncating the rest.'.format(len(self.files)))
 
@@ -74,7 +76,7 @@ class WorkingPost:
   def __exit__(self, *exc):
     return False
 
-def process_post(post):
+def process_post(post : GenericDict) -> None:
   if post['user'] not in users:
     return
 
@@ -82,14 +84,14 @@ def process_post(post):
     wp.fetch_files()
     wp.post_note()
 
-def process_fetch_only(post):
+def process_fetch_only(post : GenericDict) -> None:
   if post['user'] not in users:
     return
 
   with WorkingPost(post) as wp:
     wp.fetch_files()
 
-def main():
+def main() -> None:
   while True:
     ctime = time.time()
     rest_posts = [p for p in posts if ctime <= p['time']]
