@@ -1,0 +1,27 @@
+#!/bin/sh
+
+USER_GROUP_ID=
+for fn in config.yaml config.yml; do
+  [ ! -f "${fn}" ] && continue
+
+  USER_GROUP_ID=$(stat -c '%u:%g' "${fn}")
+  break
+done
+
+if [ -z "${USER_GROUP_ID}" ]; then
+  echo 'No config files.' >&2
+  exit 1
+fi
+
+USER_ID=$(echo "${USER_GROUP_ID}" | cut -d: -f1)
+GROUP_ID=$(echo "${USER_GROUP_ID}" | cut -d: -f2)
+
+[ "${USER_ID}" -lt 1000 ] && USER_ID=$(id -u user)
+[ "${GROUP_ID}" -lt 100 ] && GROUP_ID=$(id -g user)
+
+usermod -o \
+  -u "${USER_ID}" -g "${GROUP_ID}" \
+  user \
+  >/dev/null 2>/dev/null
+
+exec env gosu user python3 app.py

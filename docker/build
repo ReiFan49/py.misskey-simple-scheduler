@@ -1,0 +1,122 @@
+#!/bin/bash
+IMAGE_NAMES=()
+IMAGE_NAMES+=(
+  'reifan49/py.misskey-simple-scheduler'
+  'ghcr.io/reifan49/python-misskey-simple-scheduler'
+)
+
+REGISTRY_DOMAINS=(ghcr.io)
+REPOSITORY_DOMAINS=(github.com)
+
+GENERIC_IMAGE_NAMES=()
+SPECIAL_IMAGE_NAMES=()
+for image_name in "${IMAGE_NAMES[@]}"; do
+  is_generic=1
+  for registry_index in $(seq ${#REGISTRY_DOMAINS[@]}); do
+    i=$(( ${registry_index} - 1 ))
+    registry_domain="${REGISTRY_DOMAINS[$i]}"
+    repository_domain="${REPOSITORY_DOMAINS[$i]}"
+
+    [[ "${image_name}" =~ ^${registry_domain} ]] && is_generic=
+    [[ -n "${is_generic}" ]] || break
+  done
+
+  if [[ -n "${is_generic}" ]]; then
+    GENERIC_IMAGE_NAMES+=("${image_name}")
+  else
+    SPECIAL_IMAGE_NAMES+=("${image_name}")
+  fi
+done
+
+TARGET_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+if [[ -n "${TARGET_TAG}" ]]; then
+  TARGET_TAG=$(echo "${TARGET_TAG}" | grep --color=none -ohE '([0-9]+(\.[0-9]+)*)' | head -n 1)
+else
+  echo "Target tag is not detected. Using latest as fallback" >&2
+fi
+
+IMAGE_TAGS=()
+REMOTE_NAME=
+REMOTE_URL=
+REMOTE_URLS=
+REMOTE_URL_LABEL=
+
+function _process_docker_build() {
+  REMOTE_URL_LABEL=
+
+  [[ "${#IMAGE_TAGS[@]}" -gt 0 ]] || return
+  [[ -n ${REMOTE_URL} ]] && REMOTE_URL_LABEL="--label org.opencontainers.image.source=${REMOTE_URL}"
+
+  docker build "${IMAGE_TAGS[@]}" \
+    ${REMOTE_URL_LABEL} \
+    --label org.opencontainers.image.licenses=BSD-3-Clause-Clear \
+    .
+}
+
+function _process_generic_tags() {
+  IMAGE_TAGS=()
+  REMOTE_URL=
+
+  [[ -n ${REMOTE_URLS} ]] && REMOTE_URL=$(echo "${REMOTE_URLS}" | head -n 1)
+
+  for image_name in "${GENERIC_IMAGE_NAMES[@]}"; do
+    if [[ -n "${TARGET_TAG}" ]]; then
+      IMAGE_TAGS+=("-t" "${image_name}:${TARGET_TAG}")
+    else
+      IMAGE_TAGS+=("-t" "${image_name}")
+    fi
+  done
+
+  _process_docker_build
+}
+
+function _process_specific_tags() {
+  IMAGE_TAGS=()
+  REMOTE_URL=
+
+  [[ -n ${REMOTE_URLS} ]] && REMOTE_URL=$( \
+    echo "${REMOTE_URLS}" | awk '{print $1 " " $1}' | awk "{
+      sub(\"^\\\\w+://(\\\\w+@)?\", \"\", \$1)
+      sub(\"/.+\$\", \"\", \$1)
+
+      if(\$1 == \"${repository_domain}\")
+        print \$2
+    }" | head -n 1
+  )
+
+  for image_name in "${SPECIAL_IMAGE_NAMES[@]}"; do
+    [[ "${registry_domain}" == "${image_name%%/*}" ]] || continue
+
+    if [[ -n "${TARGET_TAG}" ]]; then
+      IMAGE_TAGS+=("-t" "${image_name}:${TARGET_TAG}")
+    else
+      IMAGE_TAGS+=("-t" "${image_name}")
+    fi
+  done
+
+  _process_docker_build
+}
+
+REMOTE_NAME=$(
+  git branch --format='%(HEAD) %(refname:short) %(upstream:short)' | \
+    grep -E '^\*' | awk '{ print $3 }' | cut -d/ -f1
+)
+[[ -n "${REMOTE_NAME}" ]] && \
+  REMOTE_URLS=$(git remote get-url --all "${REMOTE_NAME}") || \
+  REMOTE_URLS=
+
+# Generic Images
+
+if [[ "${#GENERIC_IMAGE_NAMES[@]}" -gt 0 ]]; then
+  _process_generic_tags
+fi
+
+# Specific Images
+
+for registry_index in $(seq ${#REGISTRY_DOMAINS[@]}); do
+  i=$(( ${registry_index} - 1 ))
+  registry_domain="${REGISTRY_DOMAINS[$i]}"
+  repository_domain="${REPOSITORY_DOMAINS[$i]}"
+
+  _process_specific_tags
+done
